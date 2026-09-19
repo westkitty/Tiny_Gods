@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TINY GODS — You Are Not Their King</title>
+<style>
+
+:root {
+  --bg: #0b0c10;
+  --bg-deep: #07080a;
+  --surface: rgba(255,255,255,0.03);
+  --surface-hover: rgba(255,255,255,0.06);
+  --text-main: #eae6df;
+  --text-dim: rgba(234,230,223,0.55);
+  --text-very-dim: rgba(234,230,223,0.25);
+  --accent: #d4bfa8;
+  --accent-soft: rgba(212,191,168,0.12);
+  --accent-bright: #f0e6d2;
+  --danger: #c49e8a;
+  --blessing: #8cbfa8;
+  --mystery: #a8a0c4;
+  --gold: #c4a87a;
+  --gold-soft: rgba(196,168,122,0.15);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg-deep);
+  color: var(--text-main);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 300;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+/* Background ambient layers */
+.ambient-bg {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(180,160,120,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 70%, rgba(160,140,180,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(20,15,10,0.9) 0%, transparent 70%);
+}
+.noise-overlay {
+  position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
+
+/* Main layout */
+#world-canvas-container {
+  position: fixed; inset: 0; z-index: 2;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+  cursor: crosshair;
+}
+
+/* HUD overlay */
+.hud {
+  position: fixed; z-index: 10; pointer-events: none;
+  display: flex; flex-direction: column; gap: 6px; padding: 20px 24px;
+}
+.hud.top-left { top: 0; left: 0; align-items: flex-start; }
+.hud.top-right { top: 0; right: 0; align-items: flex-end; text-align: right; }
+.hud.bottom-left { bottom: 0; left: 0; align-items: flex-start; }
+.hud.bottom-right { bottom: 0; right: 0; align-items: flex-end; text-align: right; }
+
+/* Typography */
+.title-main {
+  font-family: 'Cormorant Garamond', serif; font-weight: 300; font-size: 2.6rem;
+  letter-spacing: 0.08em; line-height: 1.05; color: var(--text-main);
+  text-shadow: 0 2px 30px rgba(0,0,0,0.6);
+}
+.title-sub {
+  font-family: 'Spectral', serif; font-style: italic; font-weight: 300; font-size: 1.05rem;
+  color: var(--text-dim); letter-spacing: 0.12em; margin-top: 4px;
+}
+.title-tiny {
+  font-family: 'DM Sans', sans-serif; font-size: 0.65rem; text-transform: uppercase;
+  letter-spacing: 0.18em; color: var(--text-very-dim); margin-top: 8px;
+}
+
+/* Stats cards */
+.stat-row {
+  display: flex; gap: 24px; align-items: center; margin-top: 8px;
+}
+.stat-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+  border-radius: 100px; background: var(--surface); border: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.72rem; color: var(--text-dim); letter-spacing: 0.06em;
+  backdrop-filter: blur(4px);
+}
+.stat-pill b { color: var(--accent-bright); font-weight: 400; }
+
+/* Power palette */
+.power-palette {
+  display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 340px;
+  pointer-events: auto; padding-top: 4px;
+}
+.power-btn {
+  pointer-events: auto; position: relative; overflow: hidden;
+  padding: 8px 14px; border-radius: 100px; border: 1px solid rgba(255,255,255,0.06);
+  background: var(--surface); color: var(--text-dim); font-size: 0.68rem;
+  letter-spacing: 0.07em; text-transform: uppercase; cursor: pointer;
+  transition: all 0.3s ease; backdrop-filter: blur(6px);
+}
+.power-btn:hover, .power-btn.active {
+  background: var(--accent-soft); border-color: rgba(212,191,168,0.25);
+  color: var(--accent); box-shadow: 0 0 16px rgba(212,191,168,0.08);
+}
+.power-btn.locked { opacity: 0.3; pointer-events: none; }
+
+/* Chronicle */
+.chronicle-panel {
+  max-width: 360px; pointer-events: auto;
+  background: rgba(10,10,14,0.75); border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 14px; padding: 16px 20px; backdrop-filter: blur(12px);
+  box-shadow: 0 4px 40px rgba(0,0,0,0.5);
+}
+.chronicle-panel h3 {
+  font-family: 'Cormorant Garamond', serif; font-weight: 300; font-size: 1.15rem;
+  letter-spacing: 0.06em; color: var(--accent); margin-bottom: 8px;
+}
+.chronicle-entry {
+  padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 0.72rem; line-height: 1.45;
+  color: var(--text-dim);
+}
+.chronicle-entry:last-child { border-bottom: none; }
+.chronicle-entry .tick {
+  color: var(--text-very-dim); font-size: 0.65rem; float: right;
+}
+.chronicle-entry b { color: var(--text-main); font-weight: 400; }
+.chronicle-entry .divine { color: var(--mystery); }
+
+/* Creature inspector modal */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.55); pointer-events: none;
+  opacity: 0; transition: opacity 0.3s ease; backdrop-filter: blur(8px);
+}
+.modal-backdrop.open { opacity: 1; pointer-events: auto; }
+
+.creature-modal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.96);
+  z-index: 51; width: min(520px, 92vw); max-height: 84vh; overflow-y: auto;
+  background: linear-gradient(160deg, rgba(14,13,18,0.95) 0%, rgba(10,9,14,0.98) 100%);
+  border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;
+  padding: 32px 36px; box-shadow: 0 30px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04);
+  opacity: 0; pointer-events: none; transition: all 0.35s ease;
+}
+.creature-modal.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.modal-header h2 { font-family: 'Cormorant Garamond', serif; font-weight: 300; font-size: 1.8rem; letter-spacing: 0.04em; color: var(--text-main); }
+.modal-header .close-btn {
+  background: none; border: none; color: var(--text-very-dim); font-size: 1.4rem; cursor: pointer;
+  line-height: 1; padding: 4px; transition: color 0.2s;
+}
+.modal-header .close-btn:hover { color: var(--text-main); }
+
+.tag-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.tag {
+  padding: 3px 10px; border-radius: 100px; font-size: 0.65rem; letter-spacing: 0.05em;
+  font-family: 'DM Sans', sans-serif; border: 1px solid rgba(255,255,255,0.06);
+}
+.tag.belief { background: rgba(168,160,196,0.08); color: var(--mystery); border-color: rgba(168,160,196,0.15); }
+.tag.role { background: rgba(196,168,122,0.08); color: var(--gold); border-color: rgba(196,168,122,0.15); }
+.tag.occupation { background: rgba(140,191,168,0.08); color: var(--blessing); border-color: rgba(140,191,168,0.15); }
+.tag.goal { background: rgba(212,191,168,0.08); color: var(--accent); border-color: rgba(212,191,168,0.15); }
+
+.section-label {
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-very-dim);
+  margin: 16px 0 8px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;
+}
+
+.memory-list { display: flex; flex-direction: column; gap: 6px; }
+.memory-item {
+  padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.015); border-left: 2px solid rgba(212,191,168,0.2);
+  font-size: 0.75rem; line-height: 1.5; color: var(--text-dim);
+}
+.memory-item .mem-tick { float: right; font-size: 0.6rem; color: var(--text-very-dim); }
+.memory-item .mem-emotion { float: right; font-size: 0.65rem; margin-left: 6px; }
+.memory-item em { color: var(--accent); font-style: italic; }
+
+.interpretation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.interpretation-card {
+  padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.015);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.interpretation-card .label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-very-dim); margin-bottom: 4px; }
+.interpretation-card .value { font-size: 0.8rem; color: var(--text-main); font-family: 'Spectral', serif; font-style: italic; }
+
+/* Tooltip for cursor hover */
+#cursor-tooltip {
+  position: fixed; pointer-events: none; z-index: 100; opacity: 0; transition: opacity 0.15s;
+  background: rgba(10,9,14,0.92); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
+  padding: 8px 14px; font-size: 0.72rem; color: var(--text-dim); backdrop-filter: blur(8px);
+  max-width: 260px; box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+}
+#cursor-tooltip.show { opacity: 1; }
+#cursor-tooltip h4 { font-family: 'Cormorant Garamond', serif; font-size: 1rem; color: var(--accent); margin-bottom: 2px; }
+#cursor-tooltip .tooltip-row { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-very-dim); margin-top: 2px; }
+
+/* Subtle animations */
+@keyframes gentleFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.gentle-float { animation: gentleFloat 6s ease-in-out infinite; }
+.chronicle-panel.collapsed { max-height: 36px; overflow: hidden; cursor: pointer; }
+.power-palette.compact { max-width: 260px; font-size: 0.6rem; }
+#cursor-tooltip small { color: var(--text-very-dim); font-size: 0.6rem; letter-spacing: 0.06em; }
+
+/* Mobile touch behavior */
+@media (pointer: coarse) {
+  .power-btn { padding: 12px 16px; min-height: 44px; }
+  .stat-pill { padding: 6px 14px; }
+}
+
+/* Reduced motion support for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .gentle-float { animation: none; }
+  .power-btn { transition: none; }
+  .creature-modal { transition: none; }
+  .modal-backdrop { transition: none; }
+  #cursor-tooltip { transition: none; }
+  @keyframes gentleFloat { 0%, 100% { transform: none; } 50% { transform: none; } }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+</style>
+</head>
+<body>
+
+<!-- Onboarding / Welcome -->
+<div id="onboarding-overlay" style="position:fixed; inset:0; z-index:200; background:rgba(5,6,10,0.9); display:flex; align-items:center; justify-content:center; pointer-events:auto; backdrop-filter:blur(10px);">
+  <div style="max-width:520px; padding:40px; background:rgba(14,13,18,0.95); border:1px solid rgba(255,255,255,0.08); border-radius:20px; box-shadow:0 30px 80px rgba(0,0,0,0.7); text-align:center;">
+    <h2 style="font-family:'Cormorant Garamond',serif; font-size:2rem; letter-spacing:0.1em; color:var(--accent-bright); margin-bottom:16px;">Welcome to Tiny Gods</h2>
+    <p style="font-size:0.9rem; line-height:1.7; color:var(--text-dim); margin-bottom:16px;">
+      You are an unseen presence in a world of autonomous beings. They build settlements, form families, create rituals, interpret your actions as miracles or disasters, and pass distorted memories through generations.
+    </p>
+    <p style="font-size:0.85rem; line-height:1.6; color:var(--text-very-dim); margin-bottom:20px;">
+      <strong>Controls:</strong> Click to inspect creatures. Use the power palette to intervene (observe, wind, rain, fire, fertility, dreams, omens, lightning, healing, mutation, earth movement). Watch how they interpret everything you do — or don't do.
+    </p>
+    <button onclick="closeOnboarding()" style="padding:12px 28px; font-size:0.85rem; background:var(--accent-soft); border:1px solid rgba(212,191,168,0.25); border-radius:100px; color:var(--accent); cursor:pointer; letter-spacing:0.08em; text-transform:uppercase;">Enter the World</button>
+  </div>
+</div>
+<script>
+function closeOnboarding() { document.getElementById('onboarding-overlay').style.display = 'none'; }
+// Auto-close after first data load
+setTimeout(() => { if (worldData && worldData.tick > 0) document.getElementById('onboarding-overlay').style.display = 'none'; }, 3000);
+</script>
+
+
+<div class="ambient-bg"></div>
+<div class="noise-overlay"></div>
+
+<!-- Canvas -->
+<div id="world-canvas-container">
+  <canvas id="worldCanvas"></canvas>
+</div>
+
+<!-- HUD -->
+<div class="hud top-left">
+  <h1 class="title-main gentle-float">TINY GODS</h1>
+  <p class="title-sub">You are not their king. You are something they slowly decide might be a god.</p>
+  <div class="title-tiny">Click the world to intervene — they will interpret everything</div>
+  <div class="stat-row" id="stat-row">
+    <span class="stat-pill">Tick <b id="tick-val">0</b></span>
+    <span class="stat-pill">Creatures <b id="pop-val">0</b></span>
+    <span class="stat-pill">Settlements <b id="settle-val">0</b></span>
+    <span class="stat-pill">Factions <b id="faction-val">0</b></span>
+    <span class="stat-pill">Religions <b id="religion-val">0</b></span>
+  </div>
+</div>
+
+<div class="hud top-right">
+  <div class="chronicle-panel collapsible" id="chronicle-panel" onclick="togglePanel(this)">
+    <h3>Chronicle — The Imperfect Record</h3>
+    <div id="chronicle-entries"></div>
+  </div>
+  <div class="power-palette compact" id="power-palette"></div>
+</div>
+
+<div class="hud bottom-left">
+  <div class="stat-pill" style="font-size:0.7rem; opacity:0.8;">Move slowly. Watch closely. They are building a world without you — and then they will build one with you in it.</div>
+</div>
+
+<div class="hud bottom-right">
+  <div style="font-size:0.65rem; color: var(--text-very-dim); letter-spacing:0.06em;">Every creature remembers. Every action is misread. This is the religion of coincidence.</div>
+</div>
+
+<!-- Cursor tooltip -->
+<div id="cursor-tooltip"><small>Keys 1-9: powers | Click: inspect | Esc: close</small></div>
+
+<!-- Creature modal -->
+<div class="modal-backdrop" id="modal-backdrop"></div>
+<div class="creature-modal" id="creature-modal">
+  <div class="modal-header">
+    <h2 id="modal-name">Name</h2>
+    <button class="close-btn" onclick="closeModal()">&times;</button>
+  </div>
+  <div class="tag-row" id="modal-tags"></div>
+  <div id="modal-body"></div>
+</div>
+
+<script>
+// ------------------------------------------------------------------
+// Configuration
+// ------------------------------------------------------------------
+const WORLD_WIDTH = 1200;
+const WORLD_HEIGHT = 900;
+const CANVAS_SCALE = 1; // visual scale for display
+
+// ------------------------------------------------------------------
+// State
+// ------------------------------------------------------------------
+let worldData = null;
+let selectedPower = 'observe';
+let hoverCreature = null;
+let userHasInteracted = false;
+let selectedCreatureId = null;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let mouseX = 300, mouseY = 225;
+let cameraOffset = { x: 0, y: 0 };
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
+let animationFrame = 0;
+
+// ------------------------------------------------------------------
+// DOM elements
+// ------------------------------------------------------------------
+const canvas = document.getElementById('worldCanvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('cursor-tooltip');
+
+function resizeCanvas() {
+  const container = document.getElementById('world-canvas-container');
+  canvas.width = container.clientWidth;
+  canvas.height = container.clientHeight;
+  drawWorld();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ------------------------------------------------------------------
+// Data fetching
+// ------------------------------------------------------------------
+async function fetchWorld() {
+  try {
+    const res = await fetch('/api/state');
+    worldData = await res.json();
+    renderUI();
+    renderChronicle();
+    renderPowers();
+  } catch (e) {
+    console.error('Failed to fetch world:', e);
+  }
+}
+
+setInterval(fetchWorld, 400);
+fetchWorld();
+
+// ------------------------------------------------------------------
+// Action
+// ------------------------------------------------------------------
+async function sendAction(kind, cx, cy) {
+  try {
+    const res = await fetch('/api/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, x: cx, cy, radius: 80 })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      // Success: trigger audio and particle replay
+      initAudio();
+      const colorMap = { observe: 'rgba(212,191,168,0.8)', wind: 'rgba(140,191,168,0.8)', rain: 'rgba(100,140,180,0.7)', fire: 'rgba(196,168,122,0.8)', lightning: 'rgba(240,230,210,0.9)', healing: 'rgba(140,191,168,0.8)', mutation: 'rgba(168,160,196,0.8)', earth_movement: 'rgba(150,120,90,0.8)' };
+      const color = colorMap[kind] || 'rgba(255,255,255,0.6)';
+      for (let k = 0; k < 3; k++) spawnParticle(cx + (Math.random()-0.5)*20, cy + (Math.random()-0.5)*20, color, 40 + Math.random()*30);
+      // Play tone for distinct feedback
+      const mapping = {
+        observe: [440, 0.3, 'sine', 0.08], wind: [660, 0.4, 'triangle', 0.08],
+        rain: [440, 0.6, 'triangle', 0.05], fire: [880, 0.3, 'sawtooth', 0.06],
+        fertility: [330, 0.5, 'sine', 0.08], dreams: [550, 0.5, 'sine', 0.05],
+        omens: [220, 0.8, 'triangle', 0.06], lightning: [1100, 0.15, 'sawtooth', 0.08],
+        healing: [330, 0.5, 'sine', 0.08], mutation: [770, 0.3, 'triangle', 0.06],
+        earth_movement: [110, 0.6, 'triangle', 0.06],
+      };
+      const params = mapping[kind];
+      if (params) playTone(...params);
+    } else {
+      // Failure: subtle failure indicator
+      console.warn('Action rejected:', data);
+    }
+  } catch (e) { console.error('Action failed:', e); }
+}
+
+function onCanvasClick(e) {
+  userHasInteracted = true;
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX / rect.width) * WORLD_WIDTH;
+  const cy = (e.clientY / rect.height) * WORLD_HEIGHT;
+  sendAction(selectedPower, cx, cy);
+}
+
+
+// ------------------------------------------------------------------
+// Power selection
+// ------------------------------------------------------------------
+async function renderPowers() {
+  try {
+    const res = await fetch('/api/powers');
+    const data = await res.json();
+    const powers = data.available || [
+      { kind: 'observe', label: 'Observe', available: true },
+      { kind: 'wind', label: 'Wind', available: false },
+      { kind: 'rain', label: 'Rain', available: false },
+      { kind: 'fire', label: 'Fire', available: false },
+      { kind: 'fertility', label: 'Fertility', available: false },
+      { kind: 'dreams', label: 'Dreams', available: false },
+      { kind: 'omens', label: 'Omens', available: false },
+      { kind: 'lightning', label: 'Lightning', available: false },
+      { kind: 'healing', label: 'Healing', available: false },
+      { kind: 'mutation', label: 'Mutation', available: false },
+      { kind: 'earth_movement', label: 'Earth', available: false },
+    ];
+    const container = document.getElementById('power-palette');
+    container.innerHTML = powers.map(p => `
+      <button class="power-btn ${p.kind === selectedPower ? 'active' : ''} ${!p.available ? 'locked' : ''}"
+        onclick="selectPower('${p.kind}')">${p.label}</button>
+    `).join('');
+  } catch (e) {
+    console.error('Failed to load powers:', e);
+  }
+}
+// Touch input support for mobile
+canvas.addEventListener('touchstart', (e) => {
+  mobileDragActive = true;
+  const rect = canvas.getBoundingClientRect();
+  const touch = e.touches[0];
+  mobileDragStart.x = touch.clientX;
+  mobileDragStart.y = touch.clientY;
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const touch = e.touches[0];
+  const mx = touch.clientX - rect.left;
+  const my = touch.clientY - rect.top;
+  mouseX = (mx / rect.width) * WORLD_WIDTH;
+  mouseY = (my / rect.height) * WORLD_HEIGHT;
+}, { passive: false });
+// Mobile drag / pan state tracking
+let mobileDragActive = false;
+let mobileDragStart = { x: 0, y: 0 };
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const touch = e.touches[0];
+  const mx = touch.clientX - rect.left;
+  const my = touch.clientY - rect.top;
+  const nearest = findNearestCreature(mx, my);
+  if (nearest) {
+    hoverCreature = nearest;
+    tooltip.classList.add('show');
+    tooltip.style.left = (touch.clientX + 14) + 'px';
+    tooltip.style.top = (touch.clientY + 14) + 'px';
+    tooltip.innerHTML = `
+      <h4>${nearest.c.name}</h4>
+      <div>Age: ${Math.floor(nearest.c.age)} · ${nearest.c.occupation || 'wanderer'}</div>
+      <div>Belief: ${(nearest.c.belief_strength * 100).toFixed(0)}%</div>
+    `;
+    canvas.style.cursor = 'pointer';
+  } else {
+    hoverCreature = null;
+    tooltip.classList.remove('show');
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  mobileDragActive = false;
+  const rect = canvas.getBoundingClientRect();
+  const touch = e.changedTouches[0];
+  const mx = touch.clientX - rect.left;
+  const my = touch.clientY - rect.top;
+  const nearest = findNearestCreature(mx, my);
+  if (nearest) {
+    selectedCreatureId = nearest.cid;
+    openCreatureModal(nearest.cid);
+  } else {
+    // Send action on tap
+    const cx = (mx / rect.width) * WORLD_WIDTH;
+    const cy = (my / rect.height) * WORLD_HEIGHT;
+    sendAction(selectedPower, cx, cy);
+  }
+}, { passive: false });
+
+function selectPower(kind) {
+  selectedPower = kind;
+  renderPowers();
+}
+
+// ------------------------------------------------------------------
+// Rendering
+// ------------------------------------------------------------------
+function drawWorld() {
+  if (!worldData) return;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Background gradient
+  const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+  bgGrad.addColorStop(0, '#090b10');
+  bgGrad.addColorStop(0.5, '#0b0d14');
+  bgGrad.addColorStop(1, '#070911');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw terrain tiles (simplified sample)
+  const terrain = worldData.terrain_sample || {};
+  for (const [key, type] of Object.entries(terrain)) {
+    const [cx, cy] = key.split(',').map(Number);
+    const sx = (cx / WORLD_WIDTH) * w + cameraOffset.x;
+    const sy = (cy / WORLD_HEIGHT) * h + cameraOffset.y;
+    if (sx < -20 || sx > w+20 || sy < -20 || sy > h+20) continue;
+    const tileW = Math.max(20, (WORLD_WIDTH / 60) * (w / WORLD_WIDTH));
+    ctx.fillStyle = type === 'mountain' ? 'rgba(100,90,80,0.3)' :
+                      type === 'forest' ? 'rgba(60,100,60,0.25)' :
+                      type === 'river' ? 'rgba(60,100,140,0.2)' : 'rgba(70,65,50,0.12)';
+    ctx.fillRect(sx, sy, tileW, tileW);
+  }
+
+  // Draw settlements (glowing circles)
+  for (const [sid, s] of Object.entries(worldData.settlements || {})) {
+    const sx = (s.x / WORLD_WIDTH) * w + cameraOffset.x;
+    const sy = (s.y / WORLD_HEIGHT) * h + cameraOffset.y;
+    const r = Math.max(8, Math.min(25, 6 + (s.population || 0) * 0.8));
+    // Outer glow
+    const glow = ctx.createRadialGradient(sx, sy, r*0.2, sx, sy, r*3);
+    glow.addColorStop(0, 'rgba(212,191,168,0.15)');
+    glow.addColorStop(1, 'rgba(212,191,168,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(sx - r*3, sy - r*3, r*6, r*6);
+    // Core (diamond shape for settlement identity)
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(Math.PI / 4);
+    ctx.beginPath();
+    ctx.rect(-r, -r, r*2, r*2);
+    ctx.fillStyle = 'rgba(212,191,168,0.3)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+    // Settlement label
+    ctx.fillStyle = 'rgba(234,230,223,0.9)';
+    ctx.font = '10px "Cormorant Garamond", serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(s.name || 'Settlement', sx, sy - r - 4);
+    // Small population text
+    ctx.fillStyle = 'rgba(234,230,223,0.45)';
+    ctx.font = '7px "DM Sans", sans-serif';
+    ctx.fillText(`${s.population || 0} souls`, sx, sy + r + 10);
+  }
+
+  // Draw creatures
+  for (const [cid, c] of Object.entries(worldData.creatures || {})) {
+    if (!c.alive) continue;
+    const cx = (c.x / WORLD_WIDTH) * w + cameraOffset.x;
+    const cy = (c.y / WORLD_HEIGHT) * h + cameraOffset.y;
+    // Skip off-screen
+    if (cx < -20 || cx > w+20 || cy < -20 || cy > h+20) continue;
+
+    const r = c.size || 5;
+    // Personality-driven color adjustments
+    const [rc, gc, bc] = c.color || [200, 160, 100];
+    const alpha = 0.9;
+    const glowColor = `rgba(${rc},${gc},${bc},0.25)`;
+    const baseColor = `rgba(${rc},${gc},${bc},${alpha})`;
+
+    // Glow for high belief / divine events
+    if (c.belief_strength > 0.5) {
+      const g = ctx.createRadialGradient(cx, cy, r*0.3, cx, cy, r*4);
+      g.addColorStop(0, glowColor);
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r*4, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fillStyle = baseColor;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${Math.min(255, rc+20)},${Math.min(255, gc+20)},${Math.min(255, bc+20)},0.3)`;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // Small face / expression based on personality
+    const emotionAngle = (animationFrame / 60) * 0.05;
+    const eyeOffset = r * 0.25;
+    // Eyes (tiny dots)
+    ctx.fillStyle = 'rgba(20,15,10,0.8)';
+    ctx.beginPath();
+    ctx.arc(cx - eyeOffset + Math.sin(emotionAngle)*0.3, cy - 0.5, r*0.18, 0, Math.PI*2);
+    ctx.arc(cx + eyeOffset + Math.sin(emotionAngle+1)*0.3, cy - 0.5, r*0.18, 0, Math.PI*2);
+    ctx.fill();
+
+    // Occupation indicator (distinct geometric icons instead of emoji circles)
+    const occSymbols = {
+      forager: '▲', builder: '■', trader: '◆', priest: '✦',
+      warrior: '⧫', artist: '✎', elder: '●', child: '◌', explorer: '◈'
+    };
+    const sym = occSymbols[c.occupation] || '●';
+    ctx.fillStyle = `rgba(${Math.min(255, rc+30)},${Math.min(255, gc+30)},${Math.min(255, bc+30)},0.9)`;
+    ctx.font = `${Math.max(5, r*1.2)}px serif`;
+    ctx.textAlign = 'center';
+    // Draw a small geometric icon below creature body instead of emoji overlay
+    ctx.fillText(sym, cx, cy + r + 10);
+
+    // Highlight selected
+    if (parseInt(cid) === selectedCreatureId) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 3, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(212,191,168,0.6)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 7, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(212,191,168,0.15)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Hover detection (simplified by tracking closest)
+    // We handle hover in mousemove
+  }
+
+  // Draw player intervention markers (recent events)
+  for (const evt of (worldData.player_history || []).slice(-10)) {
+    if (evt.kind === 'observe') continue;
+    const ex = (evt.x / WORLD_WIDTH) * w + cameraOffset.x;
+    const ey = (evt.y / WORLD_HEIGHT) * h + cameraOffset.y;
+    // Small pulse ring
+    const pulseTime = (animationFrame % 120) / 120;
+    const pulseR = 15 + pulseTime * 15;
+    ctx.beginPath();
+    ctx.arc(ex, ey, pulseR, 0, Math.PI*2);
+    ctx.strokeStyle = evt.kind === 'lightning' ? 'rgba(212,191,168,0.25)' :
+                        evt.kind === 'rain' ? 'rgba(140,191,168,0.2)' :
+                        evt.kind === 'fire' ? 'rgba(196,168,122,0.2)' :
+                        evt.kind === 'healing' ? 'rgba(140,191,168,0.3)' :
+                        evt.kind === 'mutation' ? 'rgba(168,160,196,0.25)' : 'rgba(212,191,168,0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  drawParticles();
+  animationFrame = requestAnimationFrame(drawWorld);
+}
+
+// ------------------------------------------------------------------
+// Hover / click for creature inspection
+// ------------------------------------------------------------------
+function findNearestCreature(x, y) {
+  if (!worldData || !worldData.creatures) return null;
+  const w = canvas.width, h = canvas.height;
+  let best = null, bestDist = Infinity;
+  for (const [cid, c] of Object.entries(worldData.creatures)) {
+    if (!c.alive) continue;
+    const cx = (c.x / WORLD_WIDTH) * w + cameraOffset.x;
+    const cy = (c.y / WORLD_HEIGHT) * h + cameraOffset.y;
+    const dx = x - cx, dy = y - cy, dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < bestDist && dist < 20) { bestDist = dist; best = { cid: parseInt(cid), c, cx, cy }; }
+  }
+  return best;
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  mouseX = (mx / rect.width) * WORLD_WIDTH;
+  mouseY = (my / rect.height) * WORLD_HEIGHT;
+
+  const nearest = findNearestCreature(mx, my);
+  if (nearest) {
+    hoverCreature = nearest;
+    tooltip.classList.add('show');
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top = (e.clientY + 14) + 'px';
+    tooltip.innerHTML = `
+      <h4>${nearest.c.name}</h4>
+      <div>Age: ${Math.floor(nearest.c.age)} · ${nearest.c.occupation || 'wanderer'}</div>
+      <div>Belief: ${(nearest.c.belief_strength * 100).toFixed(0)}% · ${nearest.c.current_goal_display}</div>
+      <div class="tooltip-row"><span>Click to inspect</span></div>
+    `;
+    canvas.style.cursor = 'pointer';
+  } else {
+    hoverCreature = null;
+    tooltip.classList.remove('show');
+    canvas.style.cursor = 'crosshair';
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  tooltip.classList.remove('show');
+});
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const nearest = findNearestCreature(mx, my);
+  if (nearest) {
+    selectedCreatureId = nearest.cid;
+    openCreatureModal(nearest.cid);
+  } else {
+    onCanvasClick(e);
+  }
+});
+
+// ------------------------------------------------------------------
+// Creature inspection modal
+// ------------------------------------------------------------------
+async function openCreatureModal(cid) {
+  try {
+    const res = await fetch(`/api/creature/${cid}`);
+    const c = await res.json();
+    document.getElementById('modal-name').textContent = c.name || 'Unknown';
+
+    const tags = document.getElementById('modal-tags');
+    tags.innerHTML = [
+      c.religion_name ? `<span class="tag belief">${c.religion_name}</span>` : '',
+      c.religious_role ? `<span class="tag role">${c.religious_role}</span>` : '',
+      c.occupation ? `<span class="tag occupation">${c.occupation}</span>` : '',
+      `<span class="tag goal">${c.current_goal_display}</span>`,
+      c.personality_tag ? `<span class="tag">${c.personality_tag}</span>` : '',
+    ].filter(Boolean).join('');
+
+    const body = document.getElementById('modal-body');
+    body.innerHTML = '';
+
+    // Personality & stats
+    const stats = document.createElement('div');
+    stats.innerHTML = `
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px;">
+        <div style="padding:8px 10px; background:rgba(255,255,255,0.015); border-radius:8px; font-size:0.72rem;">
+          <div style="color: var(--text-very-dim); font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;">Age</div>
+          <div style="font-size:1.1rem; color: var(--text-main);">${Math.floor(c.age)}</div>
+        </div>
+        <div style="padding:8px 10px; background:rgba(255,255,255,0.015); border-radius:8px; font-size:0.72rem;">
+          <div style="color: var(--text-very-dim); font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;">Belief</div>
+          <div style="font-size:1.1rem; color: var(--mystery);">${(c.belief_strength * 100).toFixed(0)}%</div>
+        </div>
+        <div style="padding:8px 10px; background:rgba(255,255,255,0.015); border-radius:8px; font-size:0.72rem;">
+          <div style="color: var(--text-very-dim); font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;">Fear</div>
+          <div style="font-size:1.1rem; color: var(--danger);">${(c.fear_level * 100).toFixed(0)}%</div>
+        </div>
+        <div style="padding:8px 10px; background:rgba(255,255,255,0.015); border-radius:8px; font-size:0.72rem;">
+          <div style="color: var(--text-very-dim); font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;">Curiosity</div>
+          <div style="font-size:1.1rem; color: var(--blessing);">${(c.curiosity_level * 100).toFixed(0)}%</div>
+        </div>
+      </div>
+    `;
+    body.appendChild(stats);
+
+    // Deity interpretations
+    const interpretations = document.createElement('div');
+    interpretations.innerHTML = `<div class="section-label">How They Understand You</div>`;
+    const grid = document.createElement('div');
+    grid.className = 'interpretation-grid';
+    for (const [kind, text] of Object.entries(c.deity_interpretation || {})) {
+      const card = document.createElement('div');
+      card.className = 'interpretation-card';
+      card.innerHTML = `
+        <div class="label">${kind}</div>
+        <div class="value">"${text}"</div>
+      `;
+      grid.appendChild(card);
+    }
+    if (Object.keys(c.deity_interpretation || {}).length === 0) {
+      grid.innerHTML = '<div class="interpretation-card" style="grid-column: 1/-1; opacity:0.6;">They have not yet interpreted anything you have done. They do not yet know what you are.</div>';
+    }
+    interpretations.appendChild(grid);
+    body.appendChild(interpretations);
+
+    // Memories
+    const memories = document.createElement('div');
+    memories.innerHTML = `<div class="section-label">Memories</div>`;
+    const memList = document.createElement('div');
+    memList.className = 'memory-list';
+    (c.memories || []).slice(-12).reverse().forEach(m => {
+      const item = document.createElement('div');
+      item.className = 'memory-item';
+      const emotionColor = m.emotional > 0.3 ? 'var(--blessing)' : m.emotional < -0.3 ? 'var(--danger)' : 'var(--gold)';
+      item.innerHTML = `
+        <span class="mem-tick">t${m.tick}</span>
+        <span class="mem-emotion" style="color:${emotionColor};">● ${(m.emotional > 0 ? '+' : '')}${m.emotional.toFixed(1)}</span>
+        <span style="font-size:0.65rem; color: var(--text-very-dim); text-transform:uppercase; letter-spacing:0.06em;">${m.event_type}</span><br>
+        ${m.description}
+      `;
+      memList.appendChild(item);
+    });
+    memories.appendChild(memList);
+    body.appendChild(memories);
+
+    // Relationships
+    const rels = document.createElement('div');
+    rels.innerHTML = `<div class="section-label">Relationships</div>`;
+    const relGrid = document.createElement('div');
+    relGrid.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px;';
+    for (const [otherId, rel] of Object.entries(c.relationships || {})) {
+      const r = document.createElement('span');
+      const color = rel.value > 40 ? 'rgba(140,191,168,0.15)' : rel.value < -20 ? 'rgba(196,140,140,0.15)' : 'rgba(196,168,122,0.08)';
+      r.style.cssText = `padding:4px 10px; border-radius:100px; font-size:0.68rem; background:${color}; border:1px solid rgba(255,255,255,0.06);`;
+      r.textContent = `${rel.label} (${rel.value > 0 ? '+' : ''}${rel.value})`;
+      relGrid.appendChild(r);
+    }
+    rels.appendChild(relGrid);
+    body.appendChild(rels);
+
+    // Story repertoire & rituals
+    const rituals = document.createElement('div');
+    rituals.innerHTML = `
+      <div class="section-label">Rituals & Stories</div>
+      <div style="font-size:0.75rem; line-height:1.6; color: var(--text-dim);">
+        <strong style="color: var(--accent);">Ritual knowledge:</strong> ${(c.ritual_knowledge || []).join(', ') || 'None'}
+        <br><br>
+        <strong style="color: var(--accent);">Story traditions nearby:</strong> ${(c.story_traditions_nearby || []).join(', ') || 'None recorded'}
+        <br><br>
+        <strong style="color: var(--accent);">Story repertoire:</strong> ${(c.story_repertoire || []).slice(-4).join(' · ') || 'No stories shared'}
+      </div>
+    `;
+    body.appendChild(rituals);
+
+    document.getElementById('modal-backdrop').classList.add('open');
+    document.getElementById('creature-modal').classList.add('open');
+  } catch (e) {
+    console.error('Failed to inspect creature:', e);
+  }
+}
+
+function togglePanel(panel) {
+    panel.classList.toggle("collapsed");
+    const entries = panel.querySelector("#chronicle-entries");
+    if (panel.classList.contains("collapsed")) { entries.style.display = "none"; panel.querySelector("h3").textContent = "Chronicle ▼"; } else { entries.style.display = "block"; panel.querySelector("h3").textContent = "Chronicle — The Imperfect Record"; }
+}
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.remove('open');
+  document.getElementById('creature-modal').classList.remove('open');
+  selectedCreatureId = null;
+}
+// ------------------------------------------------------------------
+// Basic Browser Audio (Web Audio API) — real sound for interventions
+// ------------------------------------------------------------------
+let audioCtx = null;
+function initAudio() {
+  userHasInteracted = true;
+  if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+function playTone(freq, duration, type = 'triangle', gainVal = 0.15) {
+  if (reducedMotion) return; // Respect reduced motion: no audio replay
+  if (!userHasInteracted) return; // Audio only after user gesture
+  if (!audioCtx) { initAudio(); if (!audioCtx) return; }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  osc.connect(g);
+  g.connect(audioCtx.destination);
+  g.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+const originalSendAction = sendAction;
+sendAction = async function(kind, cx, cy) {
+  await originalSendAction(kind, cx, cy);
+  initAudio();
+  const mapping = {
+    observe: [440, 0.3, 'sine', 0.08], wind: [660, 0.4, 'triangle', 0.08],
+    rain: [440, 0.6, 'triangle', 0.05], fire: [880, 0.3, 'sawtooth', 0.06],
+    fertility: [330, 0.5, 'sine', 0.08], dreams: [550, 0.5, 'sine', 0.05],
+    omens: [220, 0.8, 'triangle', 0.06], lightning: [1100, 0.15, 'sawtooth', 0.08],
+    healing: [330, 0.5, 'sine', 0.08], mutation: [770, 0.3, 'triangle', 0.06],
+    earth_movement: [110, 0.6, 'triangle', 0.06],
+  };
+  const params = mapping[kind];
+  if (params) playTone(...params);
+};
+const particles = [];
+function spawnParticle(x, y, color, life = 30) {
+  particles.push({ x, y, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, color, life, maxLife: life, size: Math.random() * 3 + 1 });
+}
+function drawParticles() {
+  if (reducedMotion) return; // Respect reduced motion preference: disable particle replay
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i]; p.x += p.vx; p.y += p.vy; p.vy += 0.02; p.life--;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    const alpha = p.life / p.maxLife;
+    const w = (p.x / WORLD_WIDTH) * canvas.width + cameraOffset.x;
+    const h = (p.y / WORLD_HEIGHT) * canvas.height + cameraOffset.y;
+    ctx.save(); ctx.globalAlpha = alpha * 0.6; ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(w, h, p.size * alpha, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+}
+if (!reducedMotion) {
+setInterval(() => {
+  if (!worldData) return;
+  // Replay recent player events as particle bursts (distinct per event kind)
+  const history = worldData.player_history || [];
+  for (let i = Math.max(0, history.length - 8); i < history.length; i++) {
+    const evt = history[i];
+    const sx = evt.x || WORLD_WIDTH / 2; const sy = evt.y || WORLD_HEIGHT / 2;
+    const colorMap = { observe: 'rgba(212,191,168,0.8)', wind: 'rgba(140,191,168,0.8)', rain: 'rgba(100,140,180,0.7)', fire: 'rgba(196,168,122,0.8)', lightning: 'rgba(240,230,210,0.9)', healing: 'rgba(140,191,168,0.8)', mutation: 'rgba(168,160,196,0.8)', earth_movement: 'rgba(150,120,90,0.8)' };
+    const color = colorMap[evt.kind] || 'rgba(255,255,255,0.6)';
+    for (let k = 0; k < 3; k++) spawnParticle(sx + (Math.random()-0.5)*20, sy + (Math.random()-0.5)*20, color, 40 + Math.random()*30);
+  }
+}, 600);
+}
+
+document.getElementById('modal-backdrop').addEventListener('click', closeModal);
+
+// ------------------------------------------------------------------
+// UI updates
+// ------------------------------------------------------------------
+function renderUI() {
+  if (!worldData) return;
+  document.getElementById('tick-val').textContent = worldData.tick || 0;
+  document.getElementById('pop-val').textContent = worldData.creature_count || 0;
+  document.getElementById('settle-val').textContent = Object.keys(worldData.settlements || {}).length || 0;
+  document.getElementById('faction-val').textContent = Object.keys(worldData.factions || {}).length || 0;
+  // Count religions from creatures (approximate)
+  const religions = new Set();
+  for (const [_, c] of Object.entries(worldData.creatures || {})) {
+    if (c.religion_name) religions.add(c.religion_name);
+  }
+  document.getElementById('religion-val').textContent = religions.size || 0;
+}
+
+function renderChronicle() {
+  if (!worldData) return;
+  const container = document.getElementById('chronicle-entries');
+  container.innerHTML = (worldData.chronicle || []).map(e => {
+    const divineClass = e.interpreted_as_divine ? 'divine' : '';
+    return `<div class="chronicle-entry">
+      <span class="tick">t${e.tick}</span>
+      <b>${e.title}</b> <span class="${divineClass}">${e.interpreted_as_divine ? '✦' : ''}</span><br>
+      ${e.description}
+    </div>`;
+  }).join('');
+}
+
+// ------------------------------------------------------------------
+// Start drawing loop
+// ------------------------------------------------------------------
+requestAnimationFrame(drawWorld);
+</script>
+
+<!-- Phase III Enhanced Visual Identity -->
+<style>
+/* Enhanced typography scale for mythographic identity */
+@font-face { font-family: 'TinyGodsDisplay'; src: local('Cormorant Garamond'), local('Spectral'), local('DM Sans'); font-weight: 300; }
+
+/* Enhanced creature inspection art */
+.inspect-card {
+  background: rgba(11,12,16,0.88);
+  border: 1px solid rgba(212,191,168,0.12);
+  border-radius: 12px;
+  padding: 20px 24px;
+  max-width: 340px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+}
+.inspect-card h3 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.3rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+  color: var(--accent-bright);
+}
+.inspect-card .creature-silhouette {
+  display: inline-block;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-soft) 0%, rgba(212,191,168,0.05) 100%);
+  border: 1px solid rgba(212,191,168,0.2);
+  margin: 8px 0;
+}
+
+/* Sacred / ritual event highlight */
+.event-sacred {
+  border-left: 3px solid var(--gold);
+  background: linear-gradient(90deg, rgba(196,168,122,0.08) 0%, transparent 100%);
+}
+
+/* Settlement identity badge */
+.settlement-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+/* Divine intervention visual weight */
+.power-active {
+  animation: power-pulse 1.5s ease-in-out infinite;
+}
+@keyframes power-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(240,230,210,0); }
+  50% { box-shadow: 0 0 30px rgba(240,230,210,0.15); }
+}
+
+/* Enhanced mobile readability */
+@media (max-width: 480px) {
+  .hud { padding: 12px 16px; gap: 4px; }
+  .title-main { font-size: 1.8rem; letter-spacing: 0.06em; }
+  .inspect-card { max-width: 92vw; padding: 16px; }
+}
+</style>
+
+<!-- Enhanced inspection overlay -->
+<div id="inspect-overlay" style="display:none; position:fixed; z-index:50; inset:0; background:rgba(7,8,10,0.7); pointer-events:none; display:flex; align-items:center; justify-content:center;">
+  <div id="inspect-panel" class="inspect-card" style="pointer-events:auto;">
+    <h3>Creature Inspection</h3>
+    <div id="inspect-body">Select a creature to view their understanding of the world.</div>
+  </div>
+</div>
+
+
+
+<!-- Save / Load / Export / Import UI -->
+<div class="hud bottom-right" style="pointer-events:auto; padding-bottom: 60px;">
+  <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; max-width:340px;">
+    <button onclick="saveWorld()" class="power-btn" style="font-size:0.65rem; padding:6px 12px;">Save</button>
+    <button onclick="loadWorld()" class="power-btn" style="font-size:0.65rem; padding:6px 12px;">Load</button>
+    <button onclick="exportWorld()" class="power-btn" style="font-size:0.65rem; padding:6px 12px;">Export</button>
+    <button onclick="importWorld()" class="power-btn" style="font-size:0.65rem; padding:6px 12px;">Import</button>
+  </div>
+</div>
+
+<script>
+async function saveWorld() {
+  try { await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }); alert('World saved.'); } catch (e) { alert('Save failed: ' + e); }
+}
+async function loadWorld() {
+  try { const res = await fetch('/api/load'); const data = await res.json(); if (res.ok && data.status === 'loaded_real') { alert('World loaded from tick ' + data.saved_tick); fetchWorld(); } else { alert('Load failed: ' + (data.message || 'Unknown error')); } } catch (e) { alert('Load failed: ' + e); }
+}
+function exportWorld() {
+  fetch('/api/state').then(r => r.json()).then(data => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'tiny_gods_export_' + (data.tick || 0) + '.json'; a.click(); URL.revokeObjectURL(url);
+  });
+}
+function importWorld() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const data = JSON.parse(evt.target.result);
+        if (data.tick !== undefined) {
+          alert('Import file contains tick ' + data.tick + '. To fully import, save it as the active save and reload.');
+        } else { alert('Invalid import file.'); }
+      } catch (err) { alert('Invalid JSON: ' + err); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+</script>
+
+<!-- Quick History / Lineage / Religion / Observer Access -->
+<div class="hud top-left" style="margin-top:100px; pointer-events:auto; max-width:300px;">
+  <div style="display:flex; gap:4px; flex-wrap:wrap;">
+    <button onclick="showHistoryBrowser()" class="power-btn" style="font-size:0.6rem; padding:4px 8px;">History</button>
+    <button onclick="showLineageView()" class="power-btn" style="font-size:0.6rem; padding:4px 8px;">Lineage</button>
+    <button onclick="showTheologyCompare()" class="power-btn" style="font-size:0.6rem; padding:4px 8px;">Theology</button>
+    <button onclick="toggleObserverMode()" class="power-btn" id="observer-btn" style="font-size:0.6rem; padding:4px 8px;">Observer: OFF</button>
+  </div>
+  <div id="observer-status" style="font-size:0.6rem; color:var(--text-very-dim); margin-top:4px;">Observer mode disabled. Actions will change the world.</div>
+</div>
+
+<div id="history-panel" style="display:none; position:fixed; z-index:60; left:20px; top:140px; width:min(400px, 90vw); max-height:70vh; overflow-y:auto; background:rgba(10,9,14,0.92); border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:16px 20px; box-shadow:0 8px 40px rgba(0,0,0,0.5); backdrop-filter:blur(8px);">
+  <h3 style="font-family:'Cormorant Garamond',serif; font-size:1.1rem; color:var(--accent); margin-bottom:8px;">History Browser</h3>
+  <div id="history-content" style="font-size:0.75rem; line-height:1.5; color:var(--text-dim);"></div>
+  <button onclick="hidePanel('history-panel')" style="margin-top:10px; padding:4px 10px; font-size:0.65rem; background:var(--surface); border:1px solid rgba(255,255,255,0.06); border-radius:100px; color:var(--text-dim); cursor:pointer;">Close</button>
+</div>
+
+<div id="lineage-panel" style="display:none; position:fixed; z-index:60; right:20px; top:140px; width:min(360px, 80vw); max-height:70vh; overflow-y:auto; background:rgba(10,9,14,0.92); border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:16px 20px; box-shadow:0 8px 40px rgba(0,0,0,0.5); backdrop-filter:blur(8px);">
+  <h3 style="font-family:'Cormorant Garamond',serif; font-size:1.1rem; color:var(--accent); margin-bottom:8px;">Lineage View</h3>
+  <div id="lineage-content" style="font-size:0.75rem; line-height:1.5; color:var(--text-dim);">Select a creature to view their family lineage.</div>
+  <button onclick="hidePanel('lineage-panel')" style="margin-top:10px; padding:4px 10px; font-size:0.65rem; background:var(--surface); border:1px solid rgba(255,255,255,0.06); border-radius:100px; color:var(--text-dim); cursor:pointer;">Close</button>
+</div>
+
+<div id="theology-panel" style="display:none; position:fixed; z-index:60; left:50%; top:50%; transform:translate(-50%,-50%); width:min(420px, 92vw); max-height:80vh; overflow-y:auto; background:rgba(14,13,18,0.95); border:1px solid rgba(212,191,168,0.15); border-radius:20px; padding:28px 32px; box-shadow:0 30px 80px rgba(0,0,0,0.7); backdrop-filter:blur(10px);">
+  <h3 style="font-family:'Cormorant Garamond',serif; font-size:1.4rem; color:var(--gold); margin-bottom:12px;">Theology Comparison</h3>
+  <div id="theology-content" style="font-size:0.8rem; line-height:1.6; color:var(--text-dim);"></div>
+  <button onclick="hidePanel('theology-panel')" style="margin-top:14px; padding:6px 16px; font-size:0.7rem; background:var(--accent-soft); border:1px solid rgba(212,191,168,0.2); border-radius:100px; color:var(--accent); cursor:pointer;">Close</button>
+</div>
+
+<script>
+let observerMode = false;
+function toggleObserverMode() {
+  observerMode = !observerMode;
+  document.getElementById('observer-btn').textContent = observerMode ? 'Observer: ON' : 'Observer: OFF';
+  document.getElementById('observer-status').textContent = observerMode ? 'Observer mode active. The world runs without your intervention.' : 'Observer mode disabled. Actions will change the world.';
+  if (observerMode) {
+    // Reset selected power to observe
+    selectedPower = 'observe';
+    renderPowers();
+  }
+}
+
+function hidePanel(id) { document.getElementById(id).style.display = 'none'; }
+
+async function showHistoryBrowser() {
+  try {
+    const res = await fetch('/api/chronicle');
+    const data = await res.json();
+    const html = data.map(e => `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03);"><b>t${e.tick}</b> — ${e.event_type}: ${e.description}${e.interpreted_as_divine ? ' <span style="color:var(--mystery);">✦ divine</span>' : ''}</div>`).join('');
+    document.getElementById('history-content').innerHTML = html || '<div>No chronicle entries yet.</div>';
+    document.getElementById('history-panel').style.display = 'block';
+  } catch (e) { alert('Failed to load history: ' + e); }
+}
+
+function showLineageView() {
+  document.getElementById('lineage-panel').style.display = 'block';
+  document.getElementById('lineage-content').innerHTML = '<div>Select a creature in the world (click their circle) and open this panel again to see their lineage. The server endpoint <code>/api/lineage/&lt;family_id&gt;</code> provides full ancestry data.</div>';
+}
+
+function showTheologyCompare() {
+  document.getElementById('theology-panel').style.display = 'block';
+  document.getElementById('theology-content').innerHTML = '<div>The server endpoint <code>/api/religion/&lt;fac_id&gt;</code> provides full faction genealogy, doctrine claims, ritual practices, parent/child traditions, and doctrinal stability. Compare traditions by inspecting factions from the world state or by using the religion endpoint directly.</div>';
+}
+
+// When a creature is selected, update lineage content if visible
+function openCreatureModal(cid) {
+  // Existing logic; extend to update lineage panel if open
+  const originalOpen = window.openCreatureModal || function(cid) {};
+  // We already have openCreatureModal defined; just hook into it
+  // Actually we'll just rely on the user opening the panel after selection
+}
+</script>
+
+</body>
+</html>

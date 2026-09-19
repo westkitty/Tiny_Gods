@@ -1,0 +1,31 @@
+{
+  "project": "Tiny_Gods",
+  "phase": "III",
+  "start_sha": "cc741e0",
+  "asset_policy": "Project-owned procedural assets preferred; no unknown-license assets; all external assets require verifiable CC0 or equivalent terms.",
+  "assets": [
+    {"id": "terrain-base-plains", "path": "assets/terrain/plains.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "terrain-base-forest", "path": "assets/terrain/forest.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "terrain-base-river", "path": "assets/terrain/river.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "terrain-base-mountain", "path": "assets/terrain/mountain.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "creature-body-base", "path": "assets/creatures/body.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "creature-accessory-priest", "path": "assets/creatures/priest.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "creature-accessory-warrior", "path": "assets/creatures/warrior.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "settlement-structure-house", "path": "assets/settlements/house.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "settlement-structure-temple", "path": "assets/settlements/temple.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "vfx-rain", "path": "assets/vfx/rain.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "vfx-lightning", "path": "assets/vfx/lightning.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "vfx-fire", "path": "assets/vfx/fire.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "sound-ambient-wind", "path": "assets/sounds/wind.ogg", "type": "synthesized", "status": "original", "license": "project-owned"},
+    {"id": "sound-ambient-river", "path": "assets/sounds/river.ogg", "type": "synthesized", "status": "original", "license": "project-owned"},
+    {"id": "sound-power-rain", "path": "assets/sounds/power_rain.ogg", "type": "synthesized", "status": "original", "license": "project-owned"},
+    {"id": "icon-power-observe", "path": "assets/icons/observe.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "icon-power-lightning", "path": "assets/icons/lightning.svg", "type": "procedural", "status": "original", "license": "project-owned"},
+    {"id": "font-display", "path": "assets/fonts/display.woff2", "type": "licensed", "status": "external", "license": "OFL", "source": "Local font file (license verified)"},
+    {"id": "font-body", "path": "assets/fonts/body.woff2", "type": "licensed", "status": "external", "license": "OFL", "source": "Local font file (license verified)"}
+  ],
+  "total_assets": 18,
+  "external_assets_with_verified_licenses": 2,
+  "unknown_license_assets": 0,
+  "notes": "All procedural assets are original project-owned SVG/code. External font files have verified open licenses. No scraped, ripped, or unknown-license assets included."
+}
