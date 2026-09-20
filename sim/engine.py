@@ -464,6 +464,7 @@ def initialize_world() -> WorldState:
     return world
 
 
+
 # ------------------------------------------------------------------
 # Phase-II Persistent World Scars (TG-161..TG-170)
 # ------------------------------------------------------------------
@@ -2574,12 +2575,16 @@ def attempt_ritual_formation(world: WorldState) -> None:
                     # Update members' faction
                     for c in supporters:
                         c.faction_id = fid
-            # Chronicle
+            # Chronicle. A ritual can emerge culturally even when every believer already
+            # belongs to another named tradition, so the narrative leader must not assume
+            # the newly named ritual has faction-ready supporters.
+            leader_pool = supporters or inhabitants
+            leader = random.choice(leader_pool)
             world.chronicle.append(ChronicleEntry(
                 tick=world.tick,
                 event_type='ritual',
                 title=f"The Emergence of {ritual_name}",
-                description=f"In {sett.name}, led by {random.choice(supporters).name}, a new way of understanding the world emerged. They believe {ritual_name} connects them to the unseen.",
+                description=f"In {sett.name}, led by {leader.name}, a new way of understanding the world emerged. They believe {ritual_name} connects them to the unseen.",
                 emotional_tone=0.5,
                 interpreted_as_divine=True
             ))
@@ -3076,6 +3081,9 @@ def serialize_world_for_client(world: WorldState) -> Dict:
             'resources': dict(s.resources),
             'story_traditions': s.story_traditions,
             'religion_leaning': s.religion_leaning,
+            'lifecycle_stage': getattr(s, 'lifecycle_stage', 'growing'),
+            'specialization': getattr(s, 'specialization', 'general'),
+            'trade_partners': list(getattr(s, 'trade_partners', set())),
         }
     factions_serial = {}
     for fid, f in world.factions.items():

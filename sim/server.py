@@ -1,7 +1,7 @@
 """Tiny Gods — Simulation Server"""
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-import os, sys, threading, time, json, random
+import os, sys, threading, time, json, random, shutil
 from collections import defaultdict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from sim.engine import initialize_world, tick, serialize_world_for_client, WORLD_WIDTH, WORLD_HEIGHT
@@ -12,31 +12,54 @@ CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5001", "https://*
 # Initialize a persistent world instance
 world = initialize_world()
 world.seed = 42  # default deterministic seed for reproducibility
-world_thread = None
+sim_thread = None
 running = True
 sim_thread_started = False
 LOCK = threading.Lock()
-LIFECYCLE_LOCK = threading.Lock()  # Separate lifecycle lock to avoid recursive deadlock
+LIFECYCLE_LOCK = threading.Lock()
+
+POWER_DEFINITIONS = [
+    {'kind': 'observe', 'label': 'Observe', 'threshold': 0},
+    {'kind': 'wind', 'label': 'Wind', 'threshold': 5},
+    {'kind': 'rain', 'label': 'Rain', 'threshold': 10},
+    {'kind': 'fire', 'label': 'Fire', 'threshold': 15},
+    {'kind': 'fertility', 'label': 'Fertility', 'threshold': 20},
+    {'kind': 'dreams', 'label': 'Dreams', 'threshold': 25},
+    {'kind': 'omens', 'label': 'Omens', 'threshold': 30},
+    {'kind': 'lightning', 'label': 'Lightning', 'threshold': 35},
+    {'kind': 'healing', 'label': 'Healing', 'threshold': 40},
+    {'kind': 'mutation', 'label': 'Mutation', 'threshold': 45},
+    {'kind': 'earth_movement', 'label': 'Earth Movement', 'threshold': 50},
+]
+POWER_BY_KIND = {item['kind']: item for item in POWER_DEFINITIONS}
+
+def is_power_available(target_world, kind: str) -> bool:
+    definition = POWER_BY_KIND.get(kind)
+    return bool(definition and len(target_world.player_history) >= definition['threshold'])
 
 def start_simulation() -> None:
     global sim_thread_started, sim_thread, running
     with LIFECYCLE_LOCK:
-        if running and not sim_thread_started:
-            sim_thread = threading.Thread(target=simulation_loop, daemon=True)
-            sim_thread.start()
-            sim_thread_started = True
+        if sim_thread_started and sim_thread is not None and sim_thread.is_alive():
+            return
+        running = True
+        sim_thread = threading.Thread(target=simulation_loop, daemon=True, name='tiny-gods-simulation')
+        sim_thread_started = True
+        sim_thread.start()
 
 def stop_simulation() -> None:
     global sim_thread_started, sim_thread, running
-    thread_ref = None
     with LIFECYCLE_LOCK:
         running = False
         thread_ref = sim_thread
-        sim_thread_started = False
-        sim_thread = None
-    # Join outside both locks to avoid deadlock
-    if thread_ref is not None:
+    if thread_ref is not None and thread_ref is not threading.current_thread():
         thread_ref.join(timeout=2.0)
+        if thread_ref.is_alive():
+            raise RuntimeError('simulation thread did not stop within timeout')
+    with LIFECYCLE_LOCK:
+        if sim_thread is thread_ref:
+            sim_thread = None
+            sim_thread_started = False
 
 def simulation_loop():
     global running, world
@@ -51,7 +74,6 @@ def simulation_loop():
 # The __main__ block below will call it once.
 # start_simulation() is NOT called at import time.
 
-import json, os
 SAVE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'tiny_gods_save.json')
 os.makedirs(os.path.dirname(SAVE_FILE), exist_ok=True)
 
@@ -125,7 +147,12 @@ def deserialize_world_state(data: dict) -> 'WorldState':
         c.story_repertoire = c_data.get('story_repertoire', [])
         c.life_events = c_data.get('life_events', [])
         c.family_ancestry = c_data.get('family_ancestry', [])
-        c.memory_list = []  # Will rebuild from saved memory entries
+        c.family_history = c_data.get('family_history', [])
+        c.family_reputation = c_data.get('family_reputation', 0.0)
+        c.relationship_reasons = {int(k): list(v) for k, v in c_data.get('relationship_reasons', {}).items()}
+        c.last_interpretation_tick = c_data.get('last_interpretation_tick', 0)
+        c.awe_memory = c_data.get('awe_memory', 0.0)
+        c.size = c_data.get('size', 6.0)
         # Rebuild relationships
         rel_raw = c_data.get('relationships', {})
         for sid_str, rel_info in rel_raw.items():
@@ -139,7 +166,7 @@ def deserialize_world_state(data: dict) -> 'WorldState':
         c.enemies = set(c_data.get('enemies', []))
         # Deity interpretations
         c.deity_interpretation = c_data.get('deity_interpretation', {})
-        # Memories (last 10 saved, but include them)
+        # Restore complete retained memory history.
         for mem_entry in c_data.get('memories', []):
             c.memories.append(Memory(
                 tick=mem_entry.get('tick', 0),
@@ -156,6 +183,7 @@ def deserialize_world_state(data: dict) -> 'WorldState':
         c.generational_culture = c_data.get('generational_culture', {})
         world.creatures[cid] = c
         world.next_creature_id = max(world.next_creature_id, cid + 1)
+    world.next_creature_id = max(world.next_creature_id, int(data.get('next_creature_id', world.next_creature_id)))
     # Restore settlements
     world.settlements.clear()
     world.next_settlement_id = 1
@@ -176,6 +204,9 @@ def deserialize_world_state(data: dict) -> 'WorldState':
         sett.structures = s_data.get('structures', [])
         sett.story_traditions = s_data.get('story_traditions', [])
         sett.historical_events = s_data.get('historical_events', [])
+        sett.faction_tendency = s_data.get('faction_tendency', 'neutral')
+        sett.last_ritual_tick = s_data.get('last_ritual_tick', 0)
+        sett.cultural_consensus = s_data.get('cultural_consensus', 0.0)
         sett.trade_partners = set(s_data.get('trade_partners', []))
         sett.trade_dependency = dict(s_data.get('trade_dependency', {}))
         # Initialize culture profile if missing
@@ -187,6 +218,7 @@ def deserialize_world_state(data: dict) -> 'WorldState':
             }
         world.settlements[sid] = sett
         world.next_settlement_id = max(world.next_settlement_id, sid + 1)
+    world.next_settlement_id = max(world.next_settlement_id, int(data.get('next_settlement_id', world.next_settlement_id)))
     # Restore factions
     world.factions.clear()
     world.next_faction_id = 1
@@ -209,6 +241,7 @@ def deserialize_world_state(data: dict) -> 'WorldState':
         fac.doctrine_claims = f_data.get('doctrine_claims', [])
         world.factions[fid] = fac
         world.next_faction_id = max(world.next_faction_id, fid + 1)
+    world.next_faction_id = max(world.next_faction_id, int(data.get('next_faction_id', world.next_faction_id)))
     # Restore event history (last 50 from save, but also restore full index if available)
     world.event_history.clear()
     for ev_data in data.get('event_history', []):
@@ -301,10 +334,13 @@ PERSISTENCE_SCHEMA_VERSION = 2
 
 def serialize_full_world(world: 'WorldState') -> dict:
     """Full deterministic world serialization for persistence (real save/load)."""
-    from sim.engine import serialize_world_for_client
-    state = serialize_world_for_client(world)
+    state = {
+        'schema_version': PERSISTENCE_SCHEMA_VERSION,
+        'next_creature_id': world.next_creature_id,
+        'next_settlement_id': world.next_settlement_id,
+        'next_faction_id': world.next_faction_id,
+    }
     # Include full critical state
-    state['schema_version'] = PERSISTENCE_SCHEMA_VERSION
     state['tick'] = world.tick
     state['seed'] = getattr(world, 'seed', 42)
     # Full creature state (all alive and dead for authoritative persistence)
@@ -318,11 +354,15 @@ def serialize_full_world(world: 'WorldState') -> dict:
             'curiosity_level': round(c.curiosity_level, 3), 'religion_name': c.religion_name,
             'religious_role': c.religious_role, 'deity_interpretation': dict(c.deity_interpretation),
             'ritual_knowledge': c.ritual_knowledge, 'story_repertoire': c.story_repertoire,
-            'life_events': c.life_events, 'family_ancestry': c.family_ancestry,
+            'life_events': c.life_events, 'family_ancestry': c.family_ancestry, 'family_history': c.family_history,
+            'family_reputation': c.family_reputation,
+            'relationship_reasons': {str(k): list(v) for k, v in c.relationship_reasons.items()},
+            'last_interpretation_tick': c.last_interpretation_tick, 'awe_memory': c.awe_memory, 'size': c.size,
             'memories': [{'tick': m.tick, 'event_type': m.event_type, 'description': m.description,
-                          'emotional_valence': round(m.emotional_valence, 2), 'source': m.source,
-                          'event_reference': m.event_reference, 'transmission_depth': m.transmission_depth}
-                         for m in c.memories[-10:]],
+                          'emotional_valence': m.emotional_valence, 'location': list(m.location), 'source': m.source,
+                          'source_reference': m.source_reference, 'event_reference': m.event_reference,
+                          'transmission_depth': m.transmission_depth}
+                         for m in c.memories],
             'current_goal': c.current_goal, 'occupation': c.occupation,
             'color': c.color, 'health': c.health, 'hunger': c.hunger, 'energy': c.energy,
             'relationships': {str(k): {'label': v.label, 'value': int(v.value)} for k, v in c.relationships.items()},
@@ -342,7 +382,8 @@ def serialize_full_world(world: 'WorldState') -> dict:
             'specialization': getattr(s, 'specialization', 'general'),
             'trade_partners': list(getattr(s, 'trade_partners', set())),
             'trade_dependency': dict(getattr(s, 'trade_dependency', {})),
-            'historical_events': s.historical_events,
+            'historical_events': s.historical_events, 'faction_tendency': s.faction_tendency,
+            'last_ritual_tick': s.last_ritual_tick, 'cultural_consensus': s.cultural_consensus,
         }
         for sid, s in world.settlements.items()
     }
@@ -436,94 +477,98 @@ def serialize_full_world(world: 'WorldState') -> dict:
     return state
 
 @app.route('/api/save', methods=['POST'])
-# H: Real persistence (full deterministic save/load with schema version)
 def save_world():
-    global world
-    data = request.get_json() or {}
     with LOCK:
         try:
             state_data = serialize_full_world(world)
-            # Add verification metadata
             state_data['verified_at_tick'] = world.tick
             state_data['saved_tick'] = world.tick
             state_data['save_version'] = PERSISTENCE_SCHEMA_VERSION
-            # Atomic save with previous-good backup
-            import tempfile, shutil
             previous_backup = SAVE_FILE.replace('.json', '.previous.json')
             temp_path = SAVE_FILE + '.tmp'
-            # Write to temp file
-            with open(temp_path, 'w') as f:
-                json.dump(state_data, f, indent=2)
-            # Verify readable
-            with open(temp_path, 'r') as f:
-                verified = json.load(f)
-            # Preserve previous good backup before atomic replace
-            if os.path.exists(SAVE_FILE) and os.path.getsize(SAVE_FILE) > 0:
-                shutil.copy2(SAVE_FILE, previous_backup)
-            # Atomic replace
-            shutil.move(temp_path, SAVE_FILE)
-            return jsonify({
-                'status': 'saved',
-                'tick': world.tick,
-                'file': SAVE_FILE,
-                'previous_backup': previous_backup,
-                'schema_version': PERSISTENCE_SCHEMA_VERSION,
-                'verified': True,
-                'full_state': True,
-            })
+            try:
+                with open(temp_path, 'w') as f:
+                    json.dump(state_data, f, separators=(',', ':'))
+                    f.flush()
+                    os.fsync(f.fileno())
+                with open(temp_path, 'r') as f:
+                    verified = json.load(f)
+                if verified.get('schema_version') != PERSISTENCE_SCHEMA_VERSION:
+                    raise ValueError('temporary save validation failed')
+                if os.path.exists(SAVE_FILE) and os.path.getsize(SAVE_FILE) > 0:
+                    try:
+                        with open(SAVE_FILE, 'r') as current_file:
+                            current_saved = json.load(current_file)
+                        if current_saved.get('schema_version') == PERSISTENCE_SCHEMA_VERSION:
+                            shutil.copy2(SAVE_FILE, previous_backup)
+                    except Exception:
+                        pass
+                os.replace(temp_path, SAVE_FILE)
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            return jsonify({'status':'saved','tick':world.tick,'schema_version':PERSISTENCE_SCHEMA_VERSION,'verified':True,'full_state':True})
         except Exception as e:
             return jsonify({'error': f'Save failed: {str(e)}', 'full_state': False}), 500
 
-@app.route('/api/load', methods=['GET'])
-# H: Load persistence — restores full world state from structured save
-def load_world():
-    global world
-    if not os.path.exists(SAVE_FILE):
-        return jsonify({'status': 'no_save', 'message': 'No previous save found'}), 404
+def _validated_candidate(saved):
+    if not isinstance(saved, dict):
+        raise ValueError('save payload must be an object')
+    if saved.get('schema_version') != PERSISTENCE_SCHEMA_VERSION:
+        raise ValueError(f'incompatible schema {saved.get("schema_version")}')
+    live_rng = random.getstate()
     try:
-        with open(SAVE_FILE, 'r') as f:
-            saved = json.load(f)
-        # Schema compatibility check
-        schema_version = saved.get('schema_version', 0)
-        if schema_version != PERSISTENCE_SCHEMA_VERSION:
-            # Allow older versions with a warning but don't fully restore
-            return jsonify({
-                'status': 'incompatible_schema',
-                'message': f'Save schema version {schema_version} does not match current {PERSISTENCE_SCHEMA_VERSION}. Full restoration blocked for compatibility.',
-                'saved_tick': saved.get('tick'),
-                'current_tick': world.tick,
-            }), 409
-        # Real restoration: reconstruct a new authoritative world from saved state
-        with LIFECYCLE_LOCK:
-            # Stop current simulation before replacing world
-            stop_simulation()
-            # Verify saved tick and basic integrity first
-            saved_tick = saved.get('tick', 0)
-        # Replace the live world reference under world lock
-        with LOCK:
-            # Create fresh world from saved data
-            restored_world = deserialize_world_state(saved)
-            # Replace the live world reference
-            world = restored_world
-            # Restore tick reference explicitly
-            world.tick = saved_tick
-        # Restart simulation: must set running=True since stop set it False
-        running = True
-        start_simulation()
-        # Verify full persistence
-        return jsonify({
-            'status': 'loaded_real',
-            'message': 'Full world state restored from structured persistence file.',
-            'saved_tick': saved_tick,
-            'current_tick': world.tick,
-            'schema_version': schema_version,
-            'creature_count_restored_estimate': len(saved.get('creatures_full', {})),
-            'settlement_count_restored_estimate': len(saved.get('settlements_full', {})),
-            'full_state_restored': True,
-            'verified': True,
-        })
+        candidate = deserialize_world_state(saved)
+        candidate_rng = random.getstate()
+    finally:
+        random.setstate(live_rng)
+    return candidate, candidate_rng
+
+def _replace_world(candidate, candidate_rng):
+    global world
+    stop_simulation()
+    with LOCK:
+        world = candidate
+        random.setstate(candidate_rng)
+    start_simulation()
+
+@app.route('/api/load', methods=['GET'])
+def load_world():
+    if not os.path.exists(SAVE_FILE):
+        return jsonify({'status':'no_save','message':'No previous save found'}), 404
+    previous_backup = SAVE_FILE.replace('.json', '.previous.json')
+    errors = []
+    for candidate_path, recovered in ((SAVE_FILE, False), (previous_backup, True)):
+        if not os.path.exists(candidate_path):
+            continue
+        try:
+            with open(candidate_path, 'r') as f:
+                saved = json.load(f)
+            candidate, candidate_rng = _validated_candidate(saved)
+            saved_tick = candidate.tick
+            _replace_world(candidate, candidate_rng)
+            return jsonify({'status':'loaded_real','saved_tick':saved_tick,'current_tick':world.tick,'schema_version':PERSISTENCE_SCHEMA_VERSION,'full_state_restored':True,'verified':True,'recovered_from_previous':recovered})
+        except Exception as exc:
+            errors.append(f'{os.path.basename(candidate_path)}: {exc}')
+    return jsonify({'error':'Load failed: ' + '; '.join(errors),'full_state':False}), 409
+
+@app.route('/api/export', methods=['GET'])
+def export_world():
+    with LOCK:
+        return jsonify(serialize_full_world(world))
+
+@app.route('/api/import', methods=['POST'])
+def import_world():
+    try:
+        payload = request.get_json(silent=True)
+        candidate, candidate_rng = _validated_candidate(payload)
+        imported_tick = candidate.tick
+        _replace_world(candidate, candidate_rng)
+        return jsonify({'status':'imported','tick':imported_tick,'schema_version':PERSISTENCE_SCHEMA_VERSION})
+    except ValueError as e:
+        return jsonify({'error':str(e)}), 400
     except Exception as e:
-        return jsonify({'error': f'Load failed: {str(e)}', 'full_state': False}), 500
+        return jsonify({'error':f'Import failed: {str(e)}'}), 500
 
 @app.route('/')
 def index():
@@ -533,8 +578,17 @@ def index():
 def get_state():
     with LOCK:
         snapshot = serialize_world_for_client(world)
-        # Include some procedural terrain for frontend
-        snapshot['terrain_full_sample'] = {f"{k[0]},{k[1]}": v for k, v in list(world.terrain.items())}
+        snapshot['player_history'] = list(world.player_history[-100:])
+        snapshot['current_story_threads'] = [
+            {'thread_id': t.thread_id, 'description': t.description, 'kind': t.kind, 'stage': t.stage, 'importance': t.importance,
+             'related_events': t.related_events, 'involved_creatures': t.involved_creatures,
+             'involved_settlements': t.involved_settlements, 'involved_religions': t.involved_religions}
+            for t in getattr(world, 'current_story_threads', [])
+        ]
+        snapshot['historical_identities'] = [
+            {'id': k, 'entity_type': v.entity_type, 'entity_id': v.entity_id, 'name': v.name, 'importance_score': v.importance_score, 'major_events': v.major_events}
+            for k, v in world.historical_identities.items()
+        ]
         return jsonify(snapshot)
 
 @app.route('/api/action', methods=['POST'])
@@ -545,7 +599,7 @@ def post_action():
     if not isinstance(data, dict):
         return jsonify({'error': 'Invalid JSON: expected object'}), 400
     kind = data.get('kind', 'observe')
-    if kind not in ['observe','wind','rain','fire','fertility','dreams','omens','lightning','healing','mutation','earth_movement']:
+    if kind not in POWER_BY_KIND:
         return jsonify({'error': f'Invalid power: {kind}'}), 400
     try:
         x = float(data.get('x', 600))
@@ -560,18 +614,12 @@ def post_action():
         return jsonify({'error': 'Invalid radius'}), 400
     if not (10 <= radius <= 300):
         return jsonify({'error': 'Radius must be between 10 and 300'}), 400
-    # Server-authoritative power unlock check (B)
-    unlock_thresholds = {
-        'observe': 0, 'wind': 5, 'rain': 10, 'fire': 15, 'fertility': 20,
-        'dreams': 25, 'omens': 30, 'lightning': 35, 'healing': 40,
-        'mutation': 45, 'earth_movement': 50,
-    }
-    if len(world.player_history) < unlock_thresholds.get(kind, 0):
-        return jsonify({'error': f'Power {kind} not yet unlocked (interactions: {len(world.player_history)})', 'power_available': False}), 403
     with LOCK:
-        # Apply action directly
+        if not is_power_available(world, kind):
+            return jsonify({'error': f'Power {kind} not yet unlocked (interactions: {len(world.player_history)})', 'power_available': False}), 403
         tick(world, player_actions=[{'kind': kind, 'x': x, 'y': y, 'radius': radius, 'location': (x, y)}])
-    return jsonify({'status': 'ok', 'kind': kind, 'tick': world.tick, 'power_available': kind in ['observe', 'wind', 'rain', 'fire', 'fertility', 'dreams', 'omens', 'lightning', 'healing', 'mutation', 'earth_movement']})
+        response = {'status':'ok','kind':kind,'tick':world.tick,'x':x,'y':y,'radius':radius,'power_available':True,'action_id':f'{world.tick}:{len(world.player_history)}:{kind}'}
+    return jsonify(response)
 
 @app.route('/api/creature/<int:cid>')
 def get_creature(cid):
@@ -625,23 +673,14 @@ def get_chronicle():
 
 @app.route('/api/powers')
 def get_powers():
-    # Powers are unlocked over time / by interaction count
-    return jsonify({
-        'available': [
-            {'kind': 'observe', 'label': 'Observe', 'available': True},
-            {'kind': 'wind', 'label': 'Wind', 'available': len(world.player_history) >= 5},
-            {'kind': 'rain', 'label': 'Rain', 'available': len(world.player_history) >= 10},
-            {'kind': 'fire', 'label': 'Fire', 'available': len(world.player_history) >= 15},
-            {'kind': 'fertility', 'label': 'Fertility', 'available': len(world.player_history) >= 20},
-            {'kind': 'dreams', 'label': 'Dreams', 'available': len(world.player_history) >= 25},
-            {'kind': 'omens', 'label': 'Omens', 'available': len(world.player_history) >= 30},
-            {'kind': 'lightning', 'label': 'Lightning', 'available': len(world.player_history) >= 35},
-            {'kind': 'healing', 'label': 'Healing', 'available': len(world.player_history) >= 40},
-            {'kind': 'mutation', 'label': 'Mutation', 'available': len(world.player_history) >= 45},
-            {'kind': 'earth_movement', 'label': 'Earth Movement', 'available': len(world.player_history) >= 50},
-        ],
-        'player_interventions': len(world.player_history)
-    })
+    with LOCK:
+        return jsonify({
+            'available': [
+                {'kind': item['kind'], 'label': item['label'], 'threshold': item['threshold'], 'available': is_power_available(world, item['kind'])}
+                for item in POWER_DEFINITIONS
+            ],
+            'player_interventions': len(world.player_history)
+        })
 
 @app.route('/api/test_run', methods=['POST'])
 # TG-062: Uses isolated world instance for diagnostic testing
@@ -657,12 +696,15 @@ def test_run():
         return jsonify({'error': 'ticks must be an integer'}), 400
     if ticks < 1 or ticks > 10000:
         return jsonify({'error': 'ticks must be between 1 and 10000'}), 400
-    diag_world = initialize_world()
-    diag_world.seed = int(data.get('seed', 42))
-    random.seed(diag_world.seed)
-    with LOCK:
+    live_rng = random.getstate()
+    try:
+        diag_world = initialize_world()
+        diag_world.seed = int(data.get('seed', 42))
+        random.seed(diag_world.seed)
         for _ in range(ticks):
             tick(diag_world)
+    finally:
+        random.setstate(live_rng)
     snapshot = serialize_world_for_client(diag_world)
     alive = [c for c in diag_world.creatures.values() if c.alive]
     return jsonify({
@@ -721,25 +763,22 @@ def test_inspect():
 @app.route('/api/lineage/<int:family_id>')
 def get_lineage(family_id):
     with LOCK:
-        members = [world.creatures[cid] for cid in world.creatures if world.creatures[cid].alive and world.creatures[cid].family == family_id]
+        members = [c for c in world.creatures.values() if c.family == family_id]
         if not members:
-            members = [world.creatures[cid] for cid in world.creatures if world.creatures[cid].family == family_id and world.creatures[cid].alive]
-        if not members:
-            return jsonify({'family_id': family_id, 'members': [], 'reputation': 0, 'ancestry_depth': 0})
-        # Build ancestry
+            return jsonify({'family_id':family_id,'members':[],'ancestry':[],'life_events':[]})
         ancestry = []
+        seen = set()
         for c in members:
-            parents = [world.creatures.get(pid) for pid in c.relationships if c.relationships[pid].label == 'parent']
-            for p in parents:
-                if p and p.alive:
-                    ancestry.append({'id': p.id, 'name': p.name, 'relationship': 'parent'})
+            for pid, rel in c.relationships.items():
+                if rel.label == 'parent' and pid in world.creatures and pid not in seen:
+                    p = world.creatures[pid]; seen.add(pid)
+                    ancestry.append({'id':p.id,'name':p.name,'alive':p.alive,'relationship':'parent'})
         return jsonify({
-            'family_id': family_id,
-            'members': [{'id': c.id, 'name': c.name, 'age': int(c.age), 'belief_strength': round(c.belief_strength, 2)} for c in members],
-            'reputation': round(sum(c.family_reputation for c in members) / max(1, len(members)), 2),
-            'ancestry_depth': max(len(c.relationships) for c in members),
-            'life_events': members[0].life_events[-5:] if members and members[0].life_events else [],
-            'family_reputation_score': round(members[0].family_reputation, 2) if members else 0,
+            'family_id':family_id,
+            'members':[{'id':c.id,'name':c.name,'age':int(c.age),'alive':c.alive,'belief_strength':round(c.belief_strength,2),'life_events':c.life_events[-5:]} for c in members],
+            'ancestry':ancestry,
+            'family_reputation_score':round(sum(getattr(c,'family_reputation',0) for c in members)/max(1,len(members)),2),
+            'life_events':[evt for c in members for evt in c.life_events[-3:]][-12:]
         })
 
 @app.route('/api/religion/<int:fac_id>')

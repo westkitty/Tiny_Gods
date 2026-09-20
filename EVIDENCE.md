@@ -1,172 +1,136 @@
-# TINY GODS — Evidence Document
+# Tiny Gods — Corrective Closure Evidence
 
+Repository: `westkitty/Tiny_Gods`
 Branch: `arena/01a0bb23-tiny-gods`
-Repo: `westkitty/Tiny_Gods`
-Session: Arena Agent Mode, 2026-09-19
+Corrective baseline: `27ef5481faa97f54d87e447c5789c90d8233ffc0`
+Date: 2026-09-19
 
-## Truthful Labeling Principle
-Every claim below is labeled as REAL (verified by tool output/file inspection), STRUCTURAL (code exists and is callable, but full end-to-end verification was blocked by environment limits), or NOT IMPLEMENTED (intentionally left out due to scope/time).
+## Evidence rule
 
----
+A source string is not treated as proof of runtime behavior. Runtime claims below are backed by executable tests, live Flask requests, seeded simulation stress or actual browser rendering. Static checks are used only for static invariants such as duplicate function ownership, external URL absence and generated-file exclusions.
 
-## 1. Persistence (Real — Verified)
+## Verified repairs
 
-- `sim/server.py`: `deserialize_world_state()` exists (line ~39). It reconstructs a new `WorldState` from saved JSON: terrain, resources, alive/dead creatures with full state (memories, relationships, deity_interpretation, ritual_knowledge, generational_culture, life_events, family_ancestry, visual/color/health/hunger/energy/position/family/partner/pregnancy/friends/enemies/state), settlements (resources, structures, trade, history), factions (members, doctrines, genealogy, stability), event_history (last 50), event_index, chronicle (last 30), player_history, historical_identities, metrics, current_inferred_intents, current_story_threads.
-- `PERSISTENCE_SCHEMA_VERSION = 2`
-- `/api/save` writes full deterministic JSON using `serialize_full_world()`.
-- `/api/load` validates schema (`PERSISTENCE_SCHEMA_VERSION`) and calls `deserialize_world_state()` followed by `start_simulation()`.
-- `/api/action` unlock threshold uses `len(world.player_history) >= unlock_thresholds.get(kind, 0)` (same as `/api/powers` uses `>` before fix, but both now use consistent definition — `/api/powers` uses `len(...) > threshold` which is a minor inconsistency, but `/api/action` uses `>=` which is the stricter/authentic server-authoritative check).
-- `SAVE_FILE` (`data/tiny_gods_save.json`) exists structurally.
-- **Verification result**: Python test output showed:
-  - `Tick saved: 30`, `Tick restored: 30`
-  - `Schema: 2`
-  - `Creatures alive saved: 44`, `Creatures alive restored: 44`
-  - `Persistence REAL: True`
-- **Truthful label**: REAL persistence mechanism exists structurally. Full regression tests (1-13) NOT yet added.
+### Server lifecycle — PASS
 
----
+- Importing `sim.server` does not start the simulation thread.
+- `start_simulation()` is idempotent.
+- `stop_simulation()` joins outside the lifecycle lock and refuses to forget a thread that failed to stop.
+- Stop → restart creates one new live thread.
+- `/api/load` validates/deserializes before replacing the live world, stops without recursive lock acquisition, replaces under the world lock and restarts exactly once.
+- Regression tests execute the lifecycle and load paths; they do not infer them from source text.
 
-## 2. Server Lifecycle (Real — Verified)
+### Persistence / recovery — PASS
 
-- Import-time `start_simulation()` REMOVED from module level in `sim/server.py`.
-- `start_simulation()` is called only in `if __name__ == '__main__':`.
-- `stop_simulation()` is idempotent (sets `running = False`, `sim_thread_started = False`, `sim_thread = None`).
-- `deserialize_world_state()` creates a fresh instance; does not mutate live world directly.
-- Python import test: `sim_thread_started` is `False` after `import sim.server`. No background thread starts on import.
-- **Truthful label**: REAL lifecycle fix verified.
+- Schema remains `PERSISTENCE_SCHEMA_VERSION = 2`.
+- Persistence serializes authoritative terrain, resources, player history, event history, chronicle, factions, settlements, historical identities, story threads, inferred intents, alive and dead creatures and retained creature memories.
+- Creature persistence now preserves memory location/provenance, family history/reputation, relationship reasons, awe/interpreter state and visual size instead of silently defaulting those values after load.
+- RNG continuation state is saved and restored.
+- Save writes a same-directory temporary file, flushes + `fsync`s, validates JSON, preserves a valid previous-good save and atomically replaces the primary with `os.replace`.
+- Load falls back to the previous-good file when the primary is corrupt.
+- `/api/export` returns the full persistence representation; `/api/import` validates in isolation and replaces the live world only on success.
+- Generated `data/*.json` save files remain excluded from Git.
 
----
+### Diagnostic isolation — PASS
 
-## 3. Browser-Side Systems (Structural — Partially Verified, Not Fully End-to-End)
+`/api/test_run` validates its tick count and restores the live Python RNG state after the isolated diagnostic run. Regression coverage compares RNG state before and after the endpoint.
 
-### Audio (Real Basic Implementation — Not Full Audio System)
-- `public/index.html`: Added basic `Web Audio API` (`AudioContext`) code:
-  - `initAudio()`, `playTone(freq, duration, type, gainVal)`
-  - Mapping for all 11 powers (`observe`, `wind`, `rain`, `fire`, `fertility`, `dreams`, `omens`, `lightning`, `healing`, `mutation`, `earth_movement`)
-- `sendAction` wrapper triggers sound on every action.
-- **Truthful label**: REAL basic browser audio engine exists (tone generation), but this is a minimal sound trigger, not a full procedural audio design system with ambient soundscapes, creature vocalizations, or settlement sound profiles.
+### Power authority and coordinates — PASS
 
-### Particles / VFX (Real Basic Implementation — Not Full VFX System)
-- `public/index.html`: Added `particles` array, `spawnParticle()`, `drawParticles()`.
-- `drawWorld()` calls `drawParticles()`.
-- Particles spawn from recent `player_history` events (mapped by kind to color).
-- **Truthful label**: REAL basic particle engine exists (canvas-rendered moving circles), but not a full VFX system with weather effects, divine aura shaders, settlement glow dynamics, or creature emotional emission trails.
+- `POWER_DEFINITIONS` is the single server-side unlock table used by `/api/powers` and `/api/action`.
+- Boundary behavior is regression-tested.
+- Browser actions send `{kind, x, y, radius}`; the prior `cy` bug is gone.
+- Accepted action responses return the coordinates/radius used by the server.
 
-### Settlement Art Replacement (Structural — Not Replaced)
-- `public/index.html`: Settlement rendering still uses glowing circle (`ctx.arc`) with gradient glow and label.
-- No replacement image/art asset loaded. No SVG/icon library added.
-- **Truthful label**: NOT REPLACED. Glowing circle remains.
+### Browser behavior architecture — PASS for implemented paths
 
-### Creature Emoji / Identity (Structural — Remains)
-- `public/index.html`: Creature rendering uses emoji/symbol mapping (`🌿`, `🧱`, `⚖`, etc.) as occupation indicator, plus small colored circle for body.
-- No custom SVG creature art or procedural creature silhouette generation added.
-- **Truthful label**: Emoji/identity remains. No replacement art implemented.
+`public/index.html` now loads one authoritative behavior file: `public/app.js`.
 
----
+Verified static invariants:
+- one `sendAction()` owner
+- one `openCreatureModal()` owner
+- one animation-loop owner
+- no old `originalSendAction` wrapper
+- no duplicate touch declaration block
+- no Google Fonts request
+- no fake "To fully import..." flow
+- no periodic replay of recent `player_history` as fresh VFX
 
-## 4. Mobile / Reduced-Motion (Structural — Code Present, Not Verified End-to-End)
+Behavior implemented in the single owner:
+- server-backed power availability and disabled locked controls
+- rejected actions do not trigger success presentation
+- successful actions trigger presentation once
+- Web Audio is initialized/resumed from a user gesture and oscillator nodes disconnect after playback
+- distinct wind/rain/fire/fertility/dream/omen/lightning/healing/mutation/earth VFX forms
+- reduced-motion media-query changes are observed at runtime and reduce/clear Canvas effects
+- Pointer Events distinguish tap, drag and pinch; drag pans and pinch zooms without casting
+- real save/load/export/import controls
+- first-run onboarding persists in `localStorage` and can be reopened with Help
+- story threads use `current_story_threads`
+- history uses chronicle/world-lens/historical identity data
+- lineage calls `/api/lineage/<family_id>` and includes dead family members
+- theology calls real `/api/religion/<id>` data
+- observer mode blocks intervention and follows actual world entities/story-linked settlements
 
-- `public/index.html`: `@media (pointer: coarse)` rules increase touch target sizes (`min-height: 44px`).
-- `touchstart`, `touchmove`, `touchend` event listeners present.
-- `@media (prefers-reduced-motion: reduce)` rules disable animations (`animation: none`, `transition: none`).
-- **Truthful label**: Mobile gesture support exists structurally (touch events mapped to inspection/action), but actual drag/pan gesture refinement (two-finger pan, inertia) NOT fully implemented. Reduced-motion CSS exists but does NOT yet fully suppress Canvas runtime animations (particle animation is not gated by `prefers-reduced-motion` in JavaScript).
+### Rendering / game feel — PASS for implemented corrective scope
 
----
+- Terrain uses real serialized terrain coordinates with deterministic procedural marks for forest, river, mountain, scarred/burned and ground detail.
+- Settlement rendering is a deterministic composition of multiple tiny structures, paths and sacred cues based on settlement state rather than a single glowing circle.
+- Creatures are procedural figures (head/torso/legs) with age scaling, interpolated motion and drawn role/tool cues rather than occupation emoji as the primary body.
+- The prior ritual-formation crash (`random.choice(supporters)` with an empty supporter list) was reproduced from live runtime evidence, repaired with a safe leader pool and regression-tested.
 
-## 5. Onboarding / Story / History / Lineage / Theology / Observer UI (Structural — Partial)
+## Executed verification
 
-- `public/index.html`: Basic HUD exists (title, subtitle, stat pills, chronicle, power palette, creature modal, cursor tooltip).
-- `sim/server.py`: `/api/lineage`, `/api/religion`, `/api/settlement/<sid>/history`, `/api/chronicle`, `/api/creature/<cid>` endpoints exist and return structured data.
-- `sim/engine.py`: `WorldState` has `current_inferred_intents`, `current_story_threads`, `historical_identities`, `chronicle`, `player_history`.
-- **Truthful label**: REAL contextual history endpoints exist (lineage, religion, settlement history, world lenses). Full onboarding flow (step-by-step divine introduction, theology explanation, observer role clarification) NOT added. Story/history/lineage/theology/observer UI elements partially present but not a complete guided experience.
+### Focused regression suite
 
----
+`/tmp/tinygods-closure-venv/bin/python tests/regression_tests.py`
 
-## 6. Save / Load / Export / Import UI (Structural — Partial)
+Result: **19 tests PASS, exit 0**.
 
-- `sim/server.py`: `/api/save` (POST) and `/api/load` (GET) exist.
-- `public/index.html`: No dedicated save/load/export/import buttons in the HUD. No file picker or download trigger.
-- **Truthful label**: REAL server-side persistence endpoints verified. Browser-side save/load/export/import UI buttons NOT added.
+Coverage includes lifecycle, deadlock-free load, diagnostic RNG isolation, unlock thresholds, action coordinates, persistence field roundtrip, non-truncated authoritative save data, previous-good recovery, export/import safety, RNG continuation, JavaScript syntax/ownership, local-first runtime, lineage/theology endpoints, VFX non-replay, generated-save exclusion and the ritual-formation empty-supporter regression.
 
----
+### Syntax / diff checks
 
-## 7. Google Fonts (Real — Still Present, Not Removed)
+- `python3 -m compileall -q sim tests` — PASS
+- `node --check public/app.js` — PASS
+- `git diff --check` — PASS
+- AST scan of top-level functions in `sim/server.py` and `sim/engine.py` — no duplicate definitions
+- JS function-owner scan — no duplicate named function owners
 
-- `public/index.html`: `@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond...')` still present in `<style>`.
-- No local font files loaded or `font-display` swap implemented.
-- **Truthful label**: NOT FIXED. Google Fonts import still present.
+### Live seeded server stress
 
----
+Against the live Flask server on the final corrective code:
 
-## 8. Terrain Rendering (Structural — Improved, Not Fully Fixed)
+- seed 1: 300 diagnostic ticks, 44 creatures, 3 settlements, 3 factions
+- seed 42: 300 diagnostic ticks, 44 creatures, 3 settlements, 3 factions
+- seed 99: 300 diagnostic ticks, 44 creatures, 3 settlements, 3 factions
+- live simulation tick advanced during a two-second observation window
+- server log scan showed no Python traceback or simulation-thread exception during this stress pass
 
-- `public/index.html`: `drawWorld()` reads `worldData.terrain_sample` (real terrain data from `/api/state`) and draws tiles based on actual terrain types (`mountain`, `forest`, `river`, etc.).
-- `sim/server.py`: `/api/state` includes `terrain_full_sample` (first 200 tiles from real `world.terrain`).
-- **Truthful label**: REAL terrain rendering uses actual saved/procedural terrain data (not arbitrary-200). However, `terrain_sample` is bounded to 200 tiles for performance; full terrain is available through save/load (`terrain_full`).
+### Legacy simulation coverage
 
----
+The legacy `tests/test_simulation.py` verification functions were exercised without treating its buffered monolithic wrapper as an instant gate:
 
-## 9. Regression Tests (Not Implemented)
+- 13 Phase-II verification functions — **PASS**
+- `test_multiple_civilizations` (3 x 500 ticks) — **PASS**
+- `test_player_intervention_impact` (200 lightning-intervention ticks) — **PASS**
+- `test_automated_inspection` (1,000 varied ticks) — **PASS**
+- `test_rapid_advance` (2,000 ticks) — extended soak started but intentionally stopped after more than five minutes of parallel wall time without a failure result; **NOT CLAIMED PASS**
+- `test_long_term_equilibrium` (3,000 autonomous ticks) — extended soak started but intentionally stopped after more than five minutes of parallel wall time without a failure result; **NOT CLAIMED PASS**
 
-- `tests/regression_tests.py` exists (created this session). It contains 5 structural verification tests (import guard, persistence roundtrip, unlock consistency, frontend catch fixed, terrain real). The full suite (TEST 1-13) is NOT fully implemented — only minimal structural tests present.
-- **Truthful label**: PARTIAL. Minimal regression tests added; full 1-13 suite NOT implemented.
+The uncompleted 2,000/3,000-tick soaks are a performance-duration evidence gap, not a hidden failure. They are not counted as passing tests.
 
----
+### Browser proof
 
-## 10. Bug Sweep (Partial)
+Actual browser output is stored in `docs/closure-proof/`:
 
-### Fixed:
-- Server lifecycle (import-time daemon removed; explicit start/stop).
-- `deserialize_world_state()` added.
-- `/api/load` uses real reconstruction (not partial patch).
-- `/api/action` uses `len(player_history) >= threshold` (consistent with server-authoritative unlock).
-- `post_action()` has strict JSON validation and coordinate bounds checks.
+- `desktop.png` — 1440x900
+- `mobile.png` — 390x844
 
-### Still Present / Not Fully Fixed:
-- `swallowed catch(e)` — FRONTEND FIXED: `public/index.html` `sendAction` now uses `catch (e) { console.error('Action failed:', e); }`. Server-side `sim/server.py` never had a swallowed catch (verified by grep). Action error handling in `post_action()` propagates exceptions as 500 errors (appropriate server-authoritative behavior).
-- Action error handling: `post_action()` has no internal `try/except` around `tick()` call; any engine exception would propagate as a 500 Flask error (which is appropriate). The frontend `sendAction` suppresses errors (`catch (e) {}`).
-- Settlement rendering: glowing circle remains (no art replacement).
-- Creature identity: emoji remains.
-- Mobile drag/pan: basic touch events present but not refined.
-- Google Fonts: still imported.
+Desktop evaluated DOM contained runtime-created `Stories`, `Help`, `Observer: OFF` and an active power control, proving `public/app.js` executed. Headless Chromium emitted macOS display-link warnings while still producing valid PNGs; no corresponding Flask/Python application exception was observed.
 
----
+## Remaining evidence boundary
 
-## 11. Evidence Files Created / Modified
-
-- `/home/user/Tiny_Gods/EVIDENCE.md` (this file) — truthful evidence.
-- `/home/user/Tiny_Gods/sim/server.py` — persistence, lifecycle, endpoints.
-- `/home/user/Tiny_Gods/public/index.html` — basic audio, basic particles, mobile touch support, creature inspection modal, reduced-motion CSS.
-- `/home/user/Tiny_Gods/data/tiny_gods_save.json` — exists when saved via `/api/save`.
-
----
-
-## 12. What Was NOT Done (Explicitly)
-
-1. Full regression test suite (TEST 1-13) not fully implemented — minimal structural tests (5) added in `tests/regression_tests.py`.
-2. Settlement art replacement from glowing circle not implemented.
-3. Creature emoji/identity art not replaced.
-4. Actual full procedural audio design (ambient soundscapes) not implemented — only basic tone triggers.
-5. Actual full VFX engine (weather shaders, aura dynamics) not implemented — only basic moving particle circles.
-6. Mobile drag/pan gesture refinement not completed (only basic touch mapping).
-7. Reduced-motion does not suppress Canvas particle animation at runtime (only CSS animations).
-8. Onboarding/story/history/lineage/theology/observer UI not fully guided — partial endpoints and HUD present only.
-9. Save/load/export/import UI buttons not added to frontend.
-10. Google Fonts import not removed.
-11. Frontend `catch(e) {}` swallowed error remains in `public/index.html` (line near `sendAction`).
-12. Commit and push completed (`git push origin arena/01a0bb23-tiny-gods` passed; commit `b01dc4e`).
-
----
-
-## 13. Verification Commands Run (Evidence)
-
-- `python3 -c "... deserialize_world_state ... Persistence REAL: True"` — passed (tick restored, schema version 2, creature count matched).
-- `python3 -c "... import sim.server ... sim_thread_started=False"` — passed (import-time daemon removed).
-- `grep -n -i "catch" sim/server.py` — no output (no swallowed catch in server file; note: frontend still has it).
-- `cat data/tiny_gods_save.json` — file exists (if saved) and contains `schema_version: 2`, `tick`, `creatures_full`, etc.
-
----
-
-## 14. Final Note on Truthful Evidence
-
-The user explicitly directed: "evidence truthfully labeled, don't fabricate". This document labels every major claim. Nothing is claimed as "verified end-to-end" unless it was verified by tool output. Where the environment blocked verification (e.g., no Playwright for browser screenshot automation, no full mobile device for gesture testing), it is explicitly labeled "Structural — Partial" or "NOT IMPLEMENTED".
+- The closure screenshots prove browser rendering at desktop and mobile viewport dimensions. They do not substitute for physical-device multi-touch testing or audio-listening quality judgment.
+- Historical Tier-III/Tier-IV "before" screenshots that were never captured cannot be reconstructed retroactively and remain documented as a historical evidence limitation.
+- The heavyweight legacy `tests/test_simulation.py` suite is tracked separately in `docs/TIER4_RELEASE_PROOF.md`; the focused closure gate does not convert a long-running legacy test into a fake instant PASS.
