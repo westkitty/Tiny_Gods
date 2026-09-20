@@ -1,5 +1,5 @@
 """Tiny Gods — Simulation Server"""
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import os, sys, threading, time, json, random, shutil
 from collections import defaultdict
@@ -8,6 +8,12 @@ from sim.engine import initialize_world, tick, serialize_world_for_client, WORLD
 
 app = Flask(__name__, static_folder='../public', static_url_path='')
 CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5001", "https://*.e2b.app", "http://localhost:*"]}})
+
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    assets_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets'))
+    return send_from_directory(assets_dir, filename)
+
 
 # Initialize a persistent world instance
 world = initialize_world()

@@ -3079,7 +3079,7 @@ def serialize_world_for_client(world: WorldState) -> Dict:
             'population': s.population,
             'structures': s.structures,
             'resources': dict(s.resources),
-            'story_traditions': s.story_traditions,
+            'story_traditions': s.story_traditions[-20:] if isinstance(s.story_traditions, list) else s.story_traditions,
             'religion_leaning': s.religion_leaning,
             'lifecycle_stage': getattr(s, 'lifecycle_stage', 'growing'),
             'specialization': getattr(s, 'specialization', 'general'),
